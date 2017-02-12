@@ -1,0 +1,83 @@
+#!/bin/sh
+#Qmail Toaster AntiSpam - qmail limit number of emails sent by user by day
+#PseudoAntiSpam - Fake Antispam - Toxic Antispam - LogBased Antispam
+#Prevent when an attacker steal a user password and abuse the server.
+#
+#Español Spanish
+#Script para limitar la cantidad de envios realizados por usuario por dia. Si el usuario alcanzo un maximo prefijado se la cambia el password y se envia un correo al administrador.
+#Este script previene los casos en los que un atacante roba una clave y abusa de nuestro server haciendo envios masivos. Normalmente estos envios masivos implican multiples autenticaciones y contando la cantidad de envios con autenticacion se identifica el ataque, y se le cambia el password para frenar esos envios.
+#
+#Para instalar:
+#1- Guardar y dar permisos de ejecucion a este script como: /home/vpopmail/bin/qmail-antispam
+#2- Crear este archivo: /etc/qmailadmin/qmail-antispam/blacklist
+#3- En el crontab agregar
+#*/5 * * * * /home/vpopmail/bin/qmail-antispam >> /var/log/maillog 2>&1
+#
+#
+#Revisar los logs asi para verificar que este funcionando
+#tail -f /var/log/maillog | grep "qmail-antispam"
+#
+#English Ingles
+#Google translate:
+#
+#This script limit the number of emails sent ​​per user per day. If the user reached a maximum preset, the script will change the password and an email is sent to the administrator.
+#
+# To install:
+# 1 - Save and execute permissions to this script as: /home/vpopmail/bin/qmail-antispam
+# 2 - Create this file: /etc/qmailadmin/qmail-spam/blacklist
+# 3 - In the crontab add
+# * / 5 **** /home/vpopmail/bin/qmail-antispam >> /var/log/maillog 2>&1
+#
+#
+# Review the logs so to check if it works:
+# tail-f / var / log / maillog | grep "qmail-antispam"
+#
+#
+#Author: 3.14
+#Contact: 3.141592x5@gmail.com
+
+#Configuracion / Config
+MAILLOG="/var/log/maillog"
+MAX_CORREOS=3000
+ID_SERVER="ID_SERVER"
+CONTACTO=admin@server.com
+LISTA_NEGRA=/etc/qmailadmin/qmail-antispam/blacklist
+VUSERINFO="/home/vpopmail/bin/vuserinfo"
+VPASSWD="/home/vpopmail/bin/vpasswd"
+AUX=$(mktemp)
+
+echo "$(date) qmail-antispam : Revisando logs"
+
+function LstUsers
+{
+    grep "$(date +"%b %d")" /var/log/maillog| grep auth: | grep ALL| awk -Fauth: {'print $2'} | awk {'print $1'} | sort | uniq -c | sort -n | grep -v \(unknown\) | awk {'print $1"|"$2'}
+}
+
+LstUsers >$AUX
+
+#cat $AUX
+
+for i in $(cat $AUX); do
+
+    cantidad=$(echo $i | awk -F\| {'print $1'})
+    usuario=$(echo $i | awk -F\| {'print $2'})
+
+    if [ $cantidad -gt $MAX_CORREOS ]; then
+
+        #echo "$(date) Limite de autenticaciones exedido: $usuario"
+        #echo "$(date) Verificando si $usuario se encuentra suspendido"
+
+        if [ "$(cat $LISTA_NEGRA | grep "$(date +"%b %d %Y")" | grep $usuario)" == "" ]; then
+            echo "$(date) qmail-antispam : Suspendiendo al usuario: $usuario envios: $cantidad maximo_permitido: $MAX_CORREOS" >> $MAILLOG
+            password_capturado=$($VUSERINFO $usuario | grep "clear passwd" | awk -F: {'print $2'})
+            echo "$(date +"%b %d %Y")" $usuario $password_capturado>>$LISTA_NEGRA
+            echo -e "Fecha: $(date) \nUsuario: $usuario \nPassword: $password_capturado \nEnvios: $cantidad" | mail -s "Aviso de spam en el $ID_SERVER" "$CONTACTO"
+            $VPASSWD $usuario -r                
+        fi
+
+    fi
+
+done
+
+echo "$(date) qmail-antispam : Fin de revision"
+
